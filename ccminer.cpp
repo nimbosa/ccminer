@@ -2019,10 +2019,12 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		case ALGO_SIA:
 			// getwork over stratum, no merkle to generate
 			break;
+#ifdef WITH_HEAVY_ALGO
 		case ALGO_HEAVY:
 		case ALGO_MJOLLNIR:
 			heavycoin_hash(merkle_root, sctx->job.coinbase, (int)sctx->job.coinbase_size);
 			break;
+#endif
 		case ALGO_FUGUE256:
 		case ALGO_GROESTL:
 		case ALGO_KECCAK:
@@ -2037,9 +2039,11 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 
 	for (i = 0; i < sctx->job.merkle_count; i++) {
 		memcpy(merkle_root + 32, sctx->job.merkle[i], 32);
+#ifdef WITH_HEAVY_ALGO
 		if (opt_algo == ALGO_HEAVY || opt_algo == ALGO_MJOLLNIR)
 			heavycoin_hash(merkle_root, merkle_root, 64);
 		else
+#endif
 			sha256d(merkle_root, merkle_root, 64);
 	}
 	
@@ -2160,6 +2164,7 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		case ALGO_FRESH:
 		case ALGO_FUGUE256:
 		case ALGO_GROESTL:
+		case ALGO_KECCAKC:
 		case ALGO_LBRY:
 		case ALGO_LYRA2v2:
 		case ALGO_LYRA2Z:
@@ -2680,6 +2685,7 @@ static void *miner_thread(void *userdata)
 				minmax = 0x40000000U;
 				break;
 			case ALGO_KECCAK:
+			case ALGO_KECCAKC:
 			case ALGO_LBRY:
 			case ALGO_LUFFA:
 			case ALGO_SIA:
@@ -2696,6 +2702,7 @@ static void *miner_thread(void *userdata)
 			case ALGO_HSR:
 			case ALGO_LYRA2v2:
 			case ALGO_PHI:
+			case ALGO_POLYTIMOS:
 			case ALGO_S3:
 			case ALGO_SKUNK:
 			case ALGO_TIMETRAVEL:
@@ -2831,15 +2838,16 @@ static void *miner_thread(void *userdata)
 		case ALGO_HSR:
 			rc = scanhash_hsr(thr_id, &work, max_nonce, &hashes_done);
 			break;
-
+#ifdef WITH_HEAVY_ALGO
 		case ALGO_HEAVY:
 			rc = scanhash_heavy(thr_id, &work, max_nonce, &hashes_done, work.maxvote, HEAVYCOIN_BLKHDR_SZ);
 			break;
 		case ALGO_MJOLLNIR:
 			rc = scanhash_heavy(thr_id, &work, max_nonce, &hashes_done, 0, MNR_BLKHDR_SZ);
 			break;
-
+#endif
 		case ALGO_KECCAK:
+		case ALGO_KECCAKC:
 			rc = scanhash_keccak256(thr_id, &work, max_nonce, &hashes_done);
 			break;
 
@@ -2882,6 +2890,9 @@ static void *miner_thread(void *userdata)
 			break;
 		case ALGO_PHI:
 			rc = scanhash_phi(thr_id, &work, max_nonce, &hashes_done);
+			break;
+		case ALGO_POLYTIMOS:
+			rc = scanhash_polytimos(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_SCRYPT:
 			rc = scanhash_scrypt(thr_id, &work, max_nonce, &hashes_done,
