@@ -98,7 +98,7 @@ bool allow_gbt = true;
 bool allow_mininginfo = true;
 bool check_dups = true; //false;
 bool check_stratum_jobs = false;
-
+bool opt_submit_stale = false;
 bool submit_old = false;
 bool use_syslog = false;
 bool use_colors = true;
@@ -260,11 +260,15 @@ Options:\n\
 			dmd-gr      Diamond-Groestl\n\
 			fresh       Freshcoin (shavite 80)\n\
 			fugue256    Fuguecoin\n\
-			groestl     Groestlcoin\n\
-			heavy       Heavycoin\n\
-			hmq1725     Doubloons / Espers\n\
-			jha         JHA v8 (JackpotCoin)\n\
-			keccak      Keccak-256 (Maxcoin)\n\
+			groestl     Groestlcoin\n"
+#ifdef WITH_HEAVY_ALGO
+"			heavy       Heavycoin\n"
+#endif
+"			hmq1725     Doubloons / Espers\n\
+			jackpot     JHA v8\n\
+			jha         Deprecated JackpotCoin\n\
+			keccak      Deprecated Keccak-256 Maxcoin\n\
+			keccakc     Keccak-256 (CreativeCoin)\n\
 			lbry        LBRY Credits (Sha/Ripemd)\n\
 			luffa       Joincoin\n\
 			lyra2       CryptoCoin\n\
@@ -275,6 +279,8 @@ Options:\n\
 			neoscrypt   FeatherCoin, Phoenix, UFO...\n\
 			nist5       NIST5 (TalkCoin)\n\
 			penta       Pentablake hash (5x Blake 512)\n\
+			phi         BHCoin\n\
+			polytimos   Politimos\n\
 			quark       Quark\n\
 			qubit       Qubit\n\
 			sha256d     SHA256d (bitcoin)\n\
@@ -288,7 +294,7 @@ Options:\n\
 			skunk       Skein Cube Fugue Streebog\n\
 			s3          S3 (1Coin)\n\
 			timetravel  Machinecoin permuted x8\n\
-			tribus      Denerius\n\
+			tribus      Denarius\n\
 			vanilla     Blake256-8 (VNL)\n\
 			veltor      Thorsriddle streebog\n\
 			whirlcoin   Old Whirlcoin (Whirlpool algo)\n\
@@ -315,7 +321,7 @@ Options:\n\
       --cuda-schedule   Set device threads scheduling mode (default: auto)\n\
   -f, --diff-factor     Divide difficulty by this factor (default 1.0) \n\
   -m, --diff-multiplier Multiply difficulty by this value (default 1.0) \n\
-      --vote=VOTE       vote (for HeavyCoin)\n\
+      --vote=VOTE       vote (for decred and HeavyCoin)\n\
       --trust-pool      trust the max block reward vote (maxvote) sent by the pool\n\
   -o, --url=URL         URL of mining server\n\
   -O, --userpass=U:P    username:password pair for mining server\n\
@@ -331,7 +337,9 @@ Options:\n\
       --time-limit      maximum time [s] to mine before exiting the program.\n\
   -T, --timeout=N       network timeout, in seconds (default: 300)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
-                          long polling is unavailable, in seconds (default: 10)\n"
+                          long polling is unavailable, in seconds (default: 10)\n\
+      --submit-stale    ignore stale jobs checks, may create more rejected shares\n\
+"
 #ifndef ORG
 "\
       --segwit          Agree with Segwit (Solo Mining only)\n"
@@ -455,7 +463,8 @@ struct option options[] = {
 	{ "retries", 1, NULL, 'r' },
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "scantime", 1, NULL, 's' },
-	{ "show-diff", 0, NULL, 1013 },
+	{ "show-diff", 0, NULL, 1013 }, // deprecated
+	{ "submit-stale", 0, NULL, 1015 },
 	{ "hide-diff", 0, NULL, 1014 },
 	{ "statsavg", 1, NULL, 'N' },
 	{ "gpu-clock", 1, NULL, 1070 },
@@ -927,7 +936,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 
 	/* discard if a newer block was received */
 	stale_work = work->height && work->height < g_work.height;
-	if (have_stratum && !stale_work && opt_algo != ALGO_ZR5 && opt_algo != ALGO_SCRYPT_JANE) {
+	if (have_stratum && !stale_work && !opt_submit_stale && opt_algo != ALGO_ZR5 && opt_algo != ALGO_SCRYPT_JANE) {
 		pthread_mutex_lock(&g_work_lock);
 		if (strlen(work->job_id + 8))
 			stale_work = strncmp(work->job_id + 8, g_work.job_id + 8, sizeof(g_work.job_id) - 8);
@@ -1049,7 +1058,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			applog(LOG_DEBUG, "share diff: %.5f (x %.1f)",
 				stratum.sharediff, work->shareratio[idnonce]);
 
-		if (opt_vote) { // ALGO_HEAVY
+		if (opt_vote) { // ALGO_HEAVY ALGO_DECRED
 			nvotestr = bin2hex((const uchar*)(&nvote), 2);
 			sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
 					"\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":%u}",
@@ -2684,7 +2693,9 @@ static void *miner_thread(void *userdata)
 			case ALGO_HEAVY:
 			case ALGO_JACKPOT:
 			case ALGO_JHA:
+			case ALGO_HSR:
 			case ALGO_LYRA2v2:
+			case ALGO_PHI:
 			case ALGO_S3:
 			case ALGO_SKUNK:
 			case ALGO_TIMETRAVEL:
@@ -2789,6 +2800,8 @@ static void *miner_thread(void *userdata)
 			rc = scanhash_cryptonight(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_DECRED:
+			//applog(LOG_BLUE, "version %x, nbits %x, ntime %x extra %x",
+			//	work.data[0], work.data[29], work.data[34], work.data[38]);
 			rc = scanhash_decred(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_DEEP:
@@ -2814,6 +2827,9 @@ static void *miner_thread(void *userdata)
 
 		case ALGO_HMQ1725:
 			rc = scanhash_hmq17(thr_id, &work, max_nonce, &hashes_done);
+			break;
+		case ALGO_HSR:
+			rc = scanhash_hsr(thr_id, &work, max_nonce, &hashes_done);
 			break;
 
 		case ALGO_HEAVY:
@@ -2863,6 +2879,9 @@ static void *miner_thread(void *userdata)
 			break;
 		case ALGO_PENTABLAKE:
 			rc = scanhash_pentablake(thr_id, &work, max_nonce, &hashes_done);
+			break;
+		case ALGO_PHI:
+			rc = scanhash_phi(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_SCRYPT:
 			rc = scanhash_scrypt(thr_id, &work, max_nonce, &hashes_done,
@@ -3198,17 +3217,7 @@ longpoll_retry:
 			continue;
 		}
 
-#ifdef ORG
 		val = json_rpc_longpoll(curl, lp_url, pool, rpc_req, &err);
-#else
-		char *req = NULL;
-		if (allow_gbt) {
-			req = (char*)malloc(strlen(opt_segwit_mode ? json_rpc_gbt_lp_segwit : json_rpc_gbt_lp) + strlen(lp_id) + 1);
-			sprintf(req, opt_segwit_mode ? json_rpc_gbt_lp_segwit : json_rpc_gbt_lp, lp_id);
-		}
-		val = json_rpc_longpoll(curl, lp_url, pool, req ? req : json_rpc_getwork, &err);
-		if (allow_gbt) free(req);
-#endif
 		if (have_stratum || switchn != pool_switch_count) {
 			if (val)
 				json_decref(val);
@@ -4118,6 +4127,9 @@ void parse_arg(int key, char *arg)
 	case 1014:
 		opt_showdiff = false;
 		break;
+	case 1015:
+		opt_submit_stale = true;
+		break;
 	case 'S':
 	case 1018:
 		applog(LOG_INFO, "Now logging to syslog...");
@@ -4186,10 +4198,10 @@ void parse_arg(int key, char *arg)
 		{
 			int device_thr[MAX_GPUS] = { 0 };
 			int ngpus = cuda_num_devices();
-			char * pch = strtok (arg,",");
+			char* pch = strtok(arg,",");
 			opt_n_threads = 0;
 			while (pch != NULL && opt_n_threads < MAX_GPUS) {
-				if (pch[0] >= '0' && pch[0] <= '9' && pch[1] == '\0')
+				if (pch[0] >= '0' && pch[0] <= '9' && strlen(pch) <= 2)
 				{
 					if (atoi(pch) < ngpus)
 						device_map[opt_n_threads++] = atoi(pch);
@@ -4440,7 +4452,7 @@ int main(int argc, char *argv[])
 #endif
 			CUDART_VERSION/1000, (CUDART_VERSION % 1000)/10, arch);
 		printf("  Originally based on Christian Buchner and Christian H. project\n");
-		printf("  Include some algos from alexis78, djm34, sp, tsiv and klausT.\n\n");
+		printf("  Include some kernels from alexis78, djm34, djEzo, tsiv and krnlx.\n\n");
 		printf("BTC donation address: 1AJdfCpLWPNoAMDfHF1wD5y8VgKSSTHxPo (tpruvot)\n\n");
 	}
 
@@ -4608,6 +4620,8 @@ int main(int argc, char *argv[])
 	}
 	// Prevent windows to sleep while mining
 	SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+	// Enable windows high precision timer
+	timeBeginPeriod(1);
 #endif
 	if (opt_affinity != -1) {
 		if (!opt_quiet)

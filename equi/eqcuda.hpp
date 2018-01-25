@@ -11,7 +11,6 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include <device_functions_decls.h>
 
 #ifdef WIN32
 #define _SNPRINTF _snprintf
@@ -90,7 +89,7 @@ template <u32 RB, u32 SM> struct equi;
 
 struct eq_cuda_context_interface
 {
-	virtual ~eq_cuda_context_interface();
+	//virtual ~eq_cuda_context_interface();
 
 	virtual void solve(const char *tequihash_header,
 		unsigned int tequihash_header_len,
@@ -99,6 +98,7 @@ struct eq_cuda_context_interface
 		fn_cancel cancelf,
 		fn_solution solutionf,
 		fn_hashdone hashdonef);
+
 public:
 	int thread_id;
 	int device_id;
@@ -125,9 +125,9 @@ class eq_cuda_context : public eq_cuda_context_interface
 		fn_cancel cancelf,
 		fn_solution solutionf,
 		fn_hashdone hashdonef);
-
 public:
 	eq_cuda_context(int thr_id, int dev_id);
+	void freemem();
 	~eq_cuda_context();
 };
 

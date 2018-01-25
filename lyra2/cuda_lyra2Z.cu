@@ -511,6 +511,7 @@ void reduceDuplexRowSetup(const int rowIn, const int rowInOut, const int rowOut,
 		ST4S(rowOut, Ncol - i - 1, state1, thread, threads);
 
 		//一個手前のスレッドからデータを貰う(同時に一個先のスレッドにデータを送る)
+		// simultaneously receive data from preceding thread and send data to following thread
 		uint2 Data0 = state[0];
 		uint2 Data1 = state[1];
 		uint2 Data2 = state[2];
@@ -548,6 +549,7 @@ void reduceDuplexRowt(const int rowIn, const int rowInOut, const int rowOut, uin
 		round_lyra(state);
 
 		//一個手前のスレッドからデータを貰う(同時に一個先のスレッドにデータを送る)
+		// simultaneously receive data from preceding thread and send data to following thread
 		uint2 Data0 = state[0];
 		uint2 Data1 = state[1];
 		uint2 Data2 = state[2];
@@ -594,6 +596,7 @@ void reduceDuplexRowt_8(const int rowInOut, uint2* state, const uint32_t thread,
 	round_lyra(state);
 
 	//一個手前のスレッドからデータを貰う(同時に一個先のスレッドにデータを送る)
+	// simultaneously receive data from preceding thread and send data to following thread
 	uint2 Data0 = state[0];
 	uint2 Data1 = state[1];
 	uint2 Data2 = state[2];
@@ -650,6 +653,7 @@ void reduceDuplexRowt_8_v2(const int rowIn, const int rowOut, const int rowInOut
 	round_lyra(state);
 
 	//一個手前のスレッドからデータを貰う(同時に一個先のスレッドにデータを送る)
+	// simultaneously receive data from preceding thread and send data to following thread
 	uint2 Data0 = state[0];
 	uint2 Data1 = state[1];
 	uint2 Data2 = state[2];
@@ -950,8 +954,12 @@ uint32_t lyra2Z_cpu_hash_32(int thr_id, uint32_t threads, uint32_t startNounce, 
 		size_t shared_mem = 0;
 
 		if (gtx750ti)
+			// 8Warpに調整のため、8192バイト確保する
+			// suitable amount to adjust for 8warp
 			shared_mem = 8192;
 		else
+			// 10Warpに調整のため、6144バイト確保する
+			// suitable amount to adjust for 10warp
 			shared_mem = 6144;
 
 		lyra2Z_gpu_hash_32_1_sm5 <<< grid2, block2 >>> (threads, startNounce, (uint2*)d_hash);
